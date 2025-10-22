@@ -296,7 +296,9 @@ func keysToFetchFromPostingGroups(postingGroups []*postingGroup) ([]labels.Label
 
 func fetchAndExpandPostingGroups(ctx context.Context, r *bucketIndexReader, postingGroups []*postingGroup, bytesLimiter BytesLimiter, tenant string) ([]storage.SeriesRef, []*labels.Matcher, error) {
 	keys, lazyMatchers := keysToFetchFromPostingGroups(postingGroups)
+	level.Info(r.logger).Log("jidai111_fetchPostings", "start")
 	fetchedPostings, closeFns, err := r.fetchPostings(ctx, keys, bytesLimiter, tenant)
+	level.Info(r.logger).Log("jidai111_fetchPostings", "end")
 	defer func() {
 		for _, closeFn := range closeFns {
 			closeFn()

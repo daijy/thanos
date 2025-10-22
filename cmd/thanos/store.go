@@ -501,7 +501,10 @@ func runStore(
 				return errors.Wrap(err, "bucket store initial sync")
 			}
 
+			// var maxprocs = runtime.GOMAXPROCS(1)
 			level.Info(logger).Log("msg", "bucket store ready", "init_duration", time.Since(begin).String())
+			level.Info(logger).Log("version: jidai31")
+			//debug.SetGCPercent(-1)
 			close(bucketStoreReady)
 
 			err = runutil.Repeat(conf.syncInterval, ctx.Done(), func() error {

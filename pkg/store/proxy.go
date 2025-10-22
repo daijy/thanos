@@ -351,6 +351,7 @@ func (s *ProxyStore) Series(originalRequest *storepb.SeriesRequest, srv storepb.
 			return status.Error(codes.Unknown, errors.Wrap(err, "send series response").Error())
 		}
 	}
+	level.Info(reqLogger).Log("jidai15_finish")
 
 	return nil
 }

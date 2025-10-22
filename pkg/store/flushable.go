@@ -6,6 +6,8 @@ package store
 import (
 	"slices"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
@@ -23,21 +25,21 @@ const (
 // flushableServer is an extension of storepb.Store_SeriesServer with a Flush method.
 type flushableServer interface {
 	storepb.Store_SeriesServer
-
 	Flush() error
 }
 
 func newFlushableServer(
 	upstream storepb.Store_SeriesServer,
 	sortingsortingStrategy sortingStrategy,
+	logger log.Logger,
 ) flushableServer {
 	switch sortingsortingStrategy {
 	case sortingStrategyStore:
-		return &resortingServer{Store_SeriesServer: upstream}
+		return &resortingServer{Store_SeriesServer: upstream, logger: logger}
 	case sortingStrategyNone:
-		return &passthroughServer{Store_SeriesServer: upstream}
+		return &passthroughServer{Store_SeriesServer: upstream, logger: logger}
 	case sortingStrategyStoreSendNoop:
-		return &resortingServer{Store_SeriesServer: upstream, notSend: true}
+		return &resortingServer{Store_SeriesServer: upstream, notSend: true, logger: logger}
 	default:
 		// should not happen.
 		panic("unexpected sorting strategy")
@@ -48,6 +50,7 @@ func newFlushableServer(
 // an upstream server without additional processing.
 type passthroughServer struct {
 	storepb.Store_SeriesServer
+	logger log.Logger
 }
 
 func (p *passthroughServer) Flush() error { return nil }
@@ -59,6 +62,7 @@ type resortingServer struct {
 	storepb.Store_SeriesServer
 	series  []*storepb.Series
 	notSend bool
+	logger  log.Logger
 }
 
 func (r *resortingServer) Send(response *storepb.SeriesResponse) error {
@@ -85,10 +89,12 @@ func (r *resortingServer) Flush() error {
 	if r.notSend {
 		return nil
 	}
+	level.Info(r.logger).Log("jidai222_sending_block ")
 	for _, response := range r.series {
 		if err := r.Store_SeriesServer.Send(storepb.NewSeriesResponse(response)); err != nil {
 			return err
 		}
 	}
+	level.Info(r.logger).Log("jidai222_finish_sending_block ")
 	return nil
 }

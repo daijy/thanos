@@ -111,7 +111,7 @@ func TestReaders(t *testing.T) {
 
 			t.Run("binary reader", func(t *testing.T) {
 				fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-				_, err := WriteBinary(ctx, bkt, id, fn, dummyHistogram)
+				_, err := WriteBinary(ctx, bkt, id, fn, dummyHistogram, nil)
 				testutil.Ok(t, err)
 
 				br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, NewBinaryReaderMetrics(nil))
@@ -412,7 +412,7 @@ func BenchmarkBinaryWrite(t *testing.B) {
 
 	t.ResetTimer()
 	for i := 0; i < t.N; i++ {
-		_, err := WriteBinary(ctx, bkt, m.ULID, fn, dummyHistogram)
+		_, err := WriteBinary(ctx, bkt, m.ULID, fn, dummyHistogram, nil)
 		testutil.Ok(t, err)
 	}
 }
@@ -426,7 +426,7 @@ func BenchmarkBinaryReader(t *testing.B) {
 
 	m := prepareIndexV2Block(t, tmpDir, bkt)
 	fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
-	_, err = WriteBinary(ctx, bkt, m.ULID, fn, dummyHistogram)
+	_, err = WriteBinary(ctx, bkt, m.ULID, fn, dummyHistogram, nil)
 	testutil.Ok(t, err)
 
 	t.ResetTimer()
@@ -604,7 +604,7 @@ func TestReaderPostingsOffsets(t *testing.T) {
 	testutil.Ok(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, id.String()), metadata.NoneFunc))
 
 	fn := filepath.Join(tmpDir, id.String(), block.IndexHeaderFilename)
-	_, err = WriteBinary(ctx, bkt, id, fn, dummyHistogram)
+	_, err = WriteBinary(ctx, bkt, id, fn, dummyHistogram, nil)
 	testutil.Ok(t, err)
 
 	br, err := NewBinaryReader(ctx, log.NewNopLogger(), nil, tmpDir, id, 3, NewBinaryReaderMetrics(nil))

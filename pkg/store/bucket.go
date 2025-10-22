@@ -1563,7 +1563,7 @@ func debugFoundBlockSetOverview(logger log.Logger, mint, maxt, maxResolutionMill
 
 // Series implements the storepb.StoreServer interface.
 func (s *BucketStore) Series(req *storepb.SeriesRequest, seriesSrv storepb.Store_SeriesServer) (err error) {
-	srv := newFlushableServer(seriesSrv, sortingStrategyNone)
+	srv := newFlushableServer(seriesSrv, sortingStrategyStore, s.logger)
 
 	if s.queryGate != nil {
 		tracing.DoInSpan(srv.Context(), "store_query_gate_ismyturn", func(ctx context.Context) {
@@ -1680,7 +1680,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, seriesSrv storepb.Store
 			defer blockClient.Close()
 
 			g.Go(func() error {
-
 				span, _ := tracing.StartSpan(gctx, "bucket_store_block_series", tracing.Tags{
 					"block.id":         blk.meta.ULID,
 					"block.mint":       blk.meta.MinTime,
@@ -1734,7 +1733,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, seriesSrv storepb.Store
 				mtx.Lock()
 				respSets = append(respSets, resp)
 				mtx.Unlock()
-
 				return nil
 			})
 		}
@@ -1778,6 +1776,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, seriesSrv storepb.Store
 	{
 		begin := time.Now()
 		tracing.DoInSpan(ctx, "bucket_store_preload_all", func(_ context.Context) {
+			level.Info(logger).Log("jidai444: before wait")
 			err = g.Wait()
 		})
 		if err != nil {
@@ -1793,9 +1792,11 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, seriesSrv storepb.Store
 		s.metrics.seriesBlocksQueried.WithLabelValues(tenant).Observe(float64(stats.blocksQueried))
 	}
 
+	level.Info(logger).Log("jidai333_loser_tree")
 	lt := NewProxyResponseLoserTree(respSets...)
 	defer lt.Close()
 	// Merge the sub-results from each selected block.
+	level.Info(logger).Log("jidai333: begin iter")
 	tracing.DoInSpan(ctx, "bucket_store_merge_all", func(ctx context.Context) {
 		begin := time.Now()
 		set := NewResponseDeduplicator(lt)
@@ -2700,6 +2701,7 @@ func (r *bucketIndexReader) ExpandedPostings(
 		return nil, err
 	}
 	if hit {
+		level.Info(r.logger).Log("jidai111: cache hit", r.block.meta.ULID)
 		return newLazyExpandedPostings(postings), nil
 	}
 	var (
@@ -3145,7 +3147,6 @@ var bufioReaderPool = sync.Pool{
 // If postings for given key is not fetched, entry at given index will be nil.
 func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label, bytesLimiter BytesLimiter, tenant string) ([]index.Postings, []func(), error) {
 	var closeFns []func()
-
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration.WithLabelValues(tenant))
 	defer timer.ObserveDuration()
 
@@ -3210,7 +3211,6 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	parts := r.block.partitioner.Partition(len(ptrs), func(i int) (start, end uint64) {
 		return uint64(ptrs[i].ptr.Start), uint64(ptrs[i].ptr.End)
 	})
-
 	size = 0
 	for _, part := range parts {
 		start := int64(part.Start)
@@ -3221,7 +3221,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		return nil, closeFns, httpgrpc.Errorf(int(codes.ResourceExhausted), "exceeded bytes limit while fetching postings: %s", err)
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
+	_, ctx = errgroup.WithContext(ctx)
 	for _, part := range parts {
 		i, j := part.ElemRng[0], part.ElemRng[1]
 
@@ -3230,59 +3230,56 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		length := int64(part.End) - start
 
 		// Fetch from object storage concurrently and update stats and posting list.
-		g.Go(func() error {
-			begin := time.Now()
-			stats := new(queryStats)
-			defer func() {
-				r.stats.merge(stats)
-			}()
+		begin := time.Now()
+		stats := new(queryStats)
+		defer func() {
+			r.stats.merge(stats)
+		}()
 
-			brdr := bufioReaderPool.Get().(*bufio.Reader)
-			defer bufioReaderPool.Put(brdr)
+		brdr := bufioReaderPool.Get().(*bufio.Reader)
+		defer bufioReaderPool.Put(brdr)
 
-			partReader, err := r.block.bkt.GetRange(ctx, r.block.indexFilename(), start, length)
+		partReader, err := r.block.bkt.GetRange(ctx, r.block.indexFilename(), start, length)
+		if err != nil {
+			return nil, closeFns, errors.Wrap(err, "read postings range")
+		}
+		defer runutil.CloseWithLogOnErr(r.logger, partReader, "readIndexRange close range reader")
+		brdr.Reset(partReader)
+
+		rdr := newPostingsReaderBuilder(ctx, brdr, ptrs[i:j], start, length, r.logger)
+
+		stats.postingsFetchCount++
+		stats.add(PostingsFetched, j-i, int(length))
+
+		for rdr.Next() {
+			diffVarintPostings, postingsCount, keyID := rdr.AtDiffVarint()
+
+			output[keyID] = newDiffVarintPostings(diffVarintPostings, nil)
+
+			startCompression := time.Now()
+			dataToCache, err := snappyStreamedEncode(int(postingsCount), diffVarintPostings)
 			if err != nil {
-				return errors.Wrap(err, "read postings range")
-			}
-			defer runutil.CloseWithLogOnErr(r.logger, partReader, "readIndexRange close range reader")
-			brdr.Reset(partReader)
-
-			rdr := newPostingsReaderBuilder(ctx, brdr, ptrs[i:j], start, length)
-
-			stats.postingsFetchCount++
-			stats.add(PostingsFetched, j-i, int(length))
-
-			for rdr.Next() {
-				diffVarintPostings, postingsCount, keyID := rdr.AtDiffVarint()
-
-				output[keyID] = newDiffVarintPostings(diffVarintPostings, nil)
-
-				startCompression := time.Now()
-				dataToCache, err := snappyStreamedEncode(int(postingsCount), diffVarintPostings)
-				if err != nil {
-					stats.cachedPostingsCompressionErrors += 1
-					return errors.Wrap(err, "encoding with snappy")
-				}
-
-				stats.cachedPostingsCompressions += 1
-				stats.CachedPostingsOriginalSizeSum += units.Base2Bytes(len(diffVarintPostings))
-				stats.CachedPostingsCompressedSizeSum += units.Base2Bytes(len(dataToCache))
-				stats.CachedPostingsCompressionTimeSum += time.Since(startCompression)
-				stats.add(PostingsTouched, 1, len(diffVarintPostings))
-
-				r.block.indexCache.StorePostings(r.block.meta.ULID, keys[keyID], dataToCache, tenant)
+				stats.cachedPostingsCompressionErrors += 1
+				return nil, closeFns, errors.Wrap(err, "encoding with snappy")
 			}
 
-			stats.PostingsFetchDurationSum += time.Since(begin)
+			stats.cachedPostingsCompressions += 1
+			stats.CachedPostingsOriginalSizeSum += units.Base2Bytes(len(diffVarintPostings))
+			stats.CachedPostingsCompressedSizeSum += units.Base2Bytes(len(dataToCache))
+			stats.CachedPostingsCompressionTimeSum += time.Since(startCompression)
+			stats.add(PostingsTouched, 1, len(diffVarintPostings))
 
-			if err := rdr.Error(); err != nil {
-				return errors.Wrap(err, "reading postings")
-			}
-			return nil
-		})
+			r.block.indexCache.StorePostings(r.block.meta.ULID, keys[keyID], dataToCache, tenant)
+		}
+
+		stats.PostingsFetchDurationSum += time.Since(begin)
+
+		if err := rdr.Error(); err != nil {
+			return nil, closeFns, errors.Wrap(err, "reading postings")
+		}
 	}
 
-	return output, closeFns, g.Wait()
+	return output, closeFns, nil
 }
 
 func (r *bucketIndexReader) decodeCachedPostings(b []byte) (index.Postings, []func(), error) {

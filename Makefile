@@ -13,7 +13,7 @@ GH_PARALLEL ?= 1
 GH_INDEX ?= 0
 
 BASE_DOCKER_SHA=''
-arch = $(shell uname -m)
+arch = x86_64
 
 # The include .busybox-versions includes the SHA's of all the platforms, which can be used as var.
 ifeq ($(arch), x86_64)

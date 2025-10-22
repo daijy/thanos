@@ -5,6 +5,7 @@ package queryrange
 
 import (
 	"context"
+	"log"
 	"net/http"
 
 	"github.com/weaveworks/common/httpgrpc"
@@ -44,6 +45,7 @@ func DoRequests(ctx context.Context, downstream Handler, reqs []Request, limits 
 	if parallelism > len(reqs) {
 		parallelism = len(reqs)
 	}
+	log.Printf("jidai1: downstream %T, %d", downstream, len(reqs))
 	for i := 0; i < parallelism; i++ {
 		go func() {
 			for req := range intermediate {

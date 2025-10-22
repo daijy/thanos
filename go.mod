@@ -284,8 +284,12 @@ replace (
 	// Required by Cortex https://github.com/cortexproject/cortex/pull/3051.
 	github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 
+	github.com/prometheus/prometheus => github.com/daijy/prometheus v0.0.0-20250907211236-5373992ab761
+
 	// Pin kuberesolver/v5 to support new grpc version. Need to upgrade kuberesolver version on weaveworks/common.
 	github.com/sercand/kuberesolver/v4 => github.com/sercand/kuberesolver/v5 v5.1.1
+
+	github.com/thanos-io/promql-engine => github.com/daijy/promql-engine v0.0.0-20250923033213-a68404eaa1e4
 
 	github.com/vimeo/galaxycache => github.com/thanos-community/galaxycache v0.0.0-20211122094458-3a32041a1f1e
 

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"hash"
 	"hash/crc32"
 	"io"
@@ -101,7 +102,7 @@ type BinaryTOC struct {
 }
 
 // WriteBinary build index header from the pieces of index in object storage, and cached in file if necessary.
-func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, filename string, downloadDuration prometheus.Histogram) ([]byte, error) {
+func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, filename string, downloadDuration prometheus.Histogram, logger log.Logger) ([]byte, error) {
 	start := time.Now()
 
 	defer func() {
@@ -111,8 +112,9 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	if filename != "" {
 		tmpDir = filepath.Dir(filename)
 	}
+	level.Info(logger).Log("msg", "newChunkedIndexReader")
 	parallelBucket := WrapWithParallel(bkt, tmpDir)
-	ir, indexVersion, err := newChunkedIndexReader(ctx, parallelBucket, id)
+	ir, indexVersion, err := newChunkedIndexReader(ctx, parallelBucket, id, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "new index reader")
 	}
@@ -178,7 +180,7 @@ type chunkedIndexReader struct {
 	toc  *index.TOC
 }
 
-func newChunkedIndexReader(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID) (*chunkedIndexReader, int, error) {
+func newChunkedIndexReader(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, logger log.Logger) (*chunkedIndexReader, int, error) {
 	indexFilepath := filepath.Join(id.String(), block.IndexFilename)
 	attrs, err := bkt.Attributes(ctx, indexFilepath)
 	if err != nil {
@@ -186,6 +188,7 @@ func newChunkedIndexReader(ctx context.Context, bkt objstore.BucketReader, id ul
 	}
 
 	rc, err := bkt.GetRange(ctx, indexFilepath, 0, index.HeaderLen)
+
 	if err != nil {
 		return nil, 0, errors.Wrapf(err, "get TOC from object storage of %s", indexFilepath)
 	}
@@ -570,7 +573,7 @@ type BinaryReader struct {
 func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, metrics *BinaryReaderMetrics) (*BinaryReader, error) {
 	if dir != "" {
 		binfn := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
-		br, err := newFileBinaryReader(binfn, postingOffsetsInMemSampling, metrics)
+		br, err := newFileBinaryReader(binfn, postingOffsetsInMemSampling, metrics, logger)
 		if err == nil {
 			return br, nil
 		}
@@ -578,23 +581,23 @@ func NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 		level.Debug(logger).Log("msg", "failed to read index-header from disk; recreating", "path", binfn, "err", err)
 
 		start := time.Now()
-		if _, err := WriteBinary(ctx, bkt, id, binfn, metrics.downloadDuration); err != nil {
+		if _, err := WriteBinary(ctx, bkt, id, binfn, metrics.downloadDuration, logger); err != nil {
 			return nil, errors.Wrap(err, "write index header")
 		}
 
 		level.Debug(logger).Log("msg", "built index-header file", "path", binfn, "elapsed", time.Since(start))
-		return newFileBinaryReader(binfn, postingOffsetsInMemSampling, metrics)
+		return newFileBinaryReader(binfn, postingOffsetsInMemSampling, metrics, logger)
 	} else {
-		buf, err := WriteBinary(ctx, bkt, id, "", metrics.downloadDuration)
+		buf, err := WriteBinary(ctx, bkt, id, "", metrics.downloadDuration, logger)
 		if err != nil {
 			return nil, errors.Wrap(err, "generate index header")
 		}
 
-		return newMemoryBinaryReader(buf, postingOffsetsInMemSampling, metrics)
+		return newMemoryBinaryReader(buf, postingOffsetsInMemSampling, metrics, logger)
 	}
 }
 
-func newMemoryBinaryReader(buf []byte, postingOffsetsInMemSampling int, metrics *BinaryReaderMetrics) (bw *BinaryReader, err error) {
+func newMemoryBinaryReader(buf []byte, postingOffsetsInMemSampling int, metrics *BinaryReaderMetrics, logger log.Logger) (bw *BinaryReader, err error) {
 	r := &BinaryReader{
 		b:                           realByteSlice(buf),
 		c:                           nil,
@@ -603,15 +606,77 @@ func newMemoryBinaryReader(buf []byte, postingOffsetsInMemSampling int, metrics 
 		metrics:                     metrics,
 	}
 
-	if err := r.init(); err != nil {
+	if err := r.init("", logger); err != nil {
 		return nil, err
 	}
 
 	return r, nil
 }
 
-func newFileBinaryReader(path string, postingOffsetsInMemSampling int, metrics *BinaryReaderMetrics) (bw *BinaryReader, err error) {
-	f, err := fileutil.OpenMmapFile(path)
+type MmapFile struct {
+	f *os.File
+	b []byte
+}
+
+func OpenMmapFile(path string, logger log.Logger) (*MmapFile, error) {
+	return OpenMmapFileWithSize(path, 0, logger)
+}
+
+func OpenMmapFileWithSize(path string, size int, logger log.Logger) (mf *MmapFile, retErr error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("try lock file: %w", err)
+	}
+	defer func() {
+		if retErr != nil {
+			f.Close()
+		}
+	}()
+	if size <= 0 {
+		info, err := f.Stat()
+		if err != nil {
+			return nil, fmt.Errorf("stat: %w", err)
+		}
+		size = int(info.Size())
+	}
+
+	level.Info(logger).Log("jidai666_here_open", path, "size", size)
+	buf := make([]byte, 4<<20)
+	reader := bufio.NewReaderSize(f, size)
+	var b []byte
+	for {
+		level.Info(logger).Log("jidai666_here_read_trunk", path)
+		n, err := reader.Read(buf)
+		if n > 0 {
+			b = append(b, buf[:n]...)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	level.Info(logger).Log("jidai666_open_done", path)
+
+	return &MmapFile{f: f, b: b}, nil
+}
+
+func (f *MmapFile) Close() error {
+	err1 := f.f.Close()
+	return err1
+}
+
+func (f *MmapFile) File() *os.File {
+	return f.f
+}
+
+func (f *MmapFile) Bytes() []byte {
+	return f.b
+}
+
+func newFileBinaryReader(path string, postingOffsetsInMemSampling int, metrics *BinaryReaderMetrics, logger log.Logger) (bw *BinaryReader, err error) {
+	f, err := OpenMmapFile(path, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -620,7 +685,6 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, metrics *
 			runutil.CloseWithErrCapture(&err, f, "index header close")
 		}
 	}()
-
 	r := &BinaryReader{
 		b:                           realByteSlice(f.Bytes()),
 		c:                           f,
@@ -629,15 +693,14 @@ func newFileBinaryReader(path string, postingOffsetsInMemSampling int, metrics *
 		metrics:                     metrics,
 	}
 
-	if err := r.init(); err != nil {
+	if err := r.init(path, logger); err != nil {
 		return nil, err
 	}
-
 	return r, nil
 }
 
 // newBinaryTOCFromByteSlice return parsed TOC from given index header byte slice.
-func newBinaryTOCFromByteSlice(bs index.ByteSlice) (*BinaryTOC, error) {
+func newBinaryTOCFromByteSlice(bs index.ByteSlice, path string, logger log.Logger) (*BinaryTOC, error) {
 	if bs.Len() < binaryTOCLen {
 		return nil, encoding.ErrInvalidSize
 	}
@@ -660,7 +723,7 @@ func newBinaryTOCFromByteSlice(bs index.ByteSlice) (*BinaryTOC, error) {
 	}, nil
 }
 
-func (r *BinaryReader) init() (err error) {
+func (r *BinaryReader) init(path string, logger log.Logger) (err error) {
 	start := time.Now()
 
 	defer func() {
@@ -682,7 +745,7 @@ func (r *BinaryReader) init() (err error) {
 		return errors.Errorf("unknown index header file version %d", r.version)
 	}
 
-	r.toc, err = newBinaryTOCFromByteSlice(r.b)
+	r.toc, err = newBinaryTOCFromByteSlice(r.b, path, logger)
 	if err != nil {
 		return errors.Wrap(err, "read index header TOC")
 	}

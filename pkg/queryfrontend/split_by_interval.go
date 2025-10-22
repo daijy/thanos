@@ -8,6 +8,7 @@ package queryfrontend
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"time"
 
@@ -49,6 +50,7 @@ func (s splitByInterval) Do(ctx context.Context, r queryrange.Request) (queryran
 	// First we're going to build new requests, one for each day, taking care
 	// to line up the boundaries with step.
 	reqs, err := splitQuery(r, s.interval(r))
+	log.Printf("splitQuery produced %d sub-requests", len(reqs))
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +78,7 @@ func splitQuery(r queryrange.Request, interval time.Duration) ([]queryrange.Requ
 
 	switch tr := r.(type) {
 	case *ThanosQueryRangeRequest:
+		log.Printf("ThanosQueryRangeRequest, %d, %d, %d", r.GetStart(), r.GetEnd(), interval)
 		// Replace @ modifier function to their respective constant values in the query.
 		// This way subqueries will be evaluated at the same time as the parent query.
 		query, err := queryrange.EvaluateAtModifierFunction(r.GetQuery(), r.GetStart(), r.GetEnd())
@@ -87,6 +90,7 @@ func splitQuery(r queryrange.Request, interval time.Duration) ([]queryrange.Requ
 		} else {
 			for ; start < r.GetEnd(); start = nextIntervalBoundary(start, r.GetStep(), interval) + r.GetStep() {
 				end := nextIntervalBoundary(start, r.GetStep(), interval)
+				log.Printf("here3 %d, %d", start, end)
 				if end+r.GetStep() >= r.GetEnd() {
 					end = r.GetEnd()
 				}

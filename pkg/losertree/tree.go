@@ -7,6 +7,10 @@
 
 package losertree
 
+import (
+	"log"
+)
+
 type Sequence interface {
 	Next() bool // Advances and returns true if there is a value at this new position.
 }
@@ -22,7 +26,9 @@ func New[E any, S Sequence](sequences []S, maxVal E, at func(S) E, less func(E, 
 	}
 	for i, s := range sequences {
 		t.nodes[i+nSequences].items = s
+		log.Printf("jidai_herehere1")
 		t.moveNext(i + nSequences) // Must call Next on each item so that At() has a value.
+		log.Printf("jidai_herehere2")
 	}
 	if nSequences > 0 {
 		t.nodes[0].index = -1 // flag to be initialized on first call to Next().
@@ -66,6 +72,7 @@ func (t *Tree[E, S]) moveNext(index int) bool {
 	t.close(n.items) // Next() returned false; close it and mark as finished.
 	n.value = t.maxVal
 	n.index = -1
+	log.Printf("jidai_herehere5")
 	return false
 }
 

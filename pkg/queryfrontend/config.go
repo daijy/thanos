@@ -4,6 +4,7 @@
 package queryfrontend
 
 import (
+	logging "log"
 	"strings"
 	"time"
 
@@ -313,6 +314,7 @@ func (cfg *Config) validateDynamicSplitParams() error {
 }
 
 func (cfg *Config) isStaticSplitSet() bool {
+	logging.Printf("jidai1: static split set: %d", cfg.QueryRangeConfig.SplitQueriesByInterval)
 	return cfg.QueryRangeConfig.SplitQueriesByInterval != 0
 }
 

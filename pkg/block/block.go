@@ -50,9 +50,11 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 		return errors.Wrap(err, "create dir")
 	}
 
+	level.Info(logger).Log("Start downloading " + bucket.Name() + path.Join(id.String(), MetaFilename))
 	if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), MetaFilename), path.Join(dst, MetaFilename)); err != nil {
 		return err
 	}
+	level.Info(logger).Log("End downloading " + bucket.Name() + path.Join(id.String(), MetaFilename))
 	m, err := metadata.ReadFromDir(dst)
 	if err != nil {
 		return errors.Wrapf(err, "reading meta from %s", dst)

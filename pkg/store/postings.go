@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 )
 
@@ -30,11 +31,11 @@ type postingsReaderBuilder struct {
 	numberOfPostingsInCur uint64
 	uvarintEncodeBuf      []byte
 	ctx                   context.Context
+	logger                log.Logger
 }
 
 // newPostingsReaderBuilder is a builder that reads directly from the index
-// and builds a diff varint encoded []byte that could be later used directly.
-func newPostingsReaderBuilder(ctx context.Context, r *bufio.Reader, postings []postingPtr, start, length int64) *postingsReaderBuilder {
+func newPostingsReaderBuilder(ctx context.Context, r *bufio.Reader, postings []postingPtr, start, length int64, logger log.Logger) *postingsReaderBuilder {
 	prb := &postingsReaderBuilder{
 		r:                r,
 		readBuf:          make([]byte, 4),
@@ -43,6 +44,7 @@ func newPostingsReaderBuilder(ctx context.Context, r *bufio.Reader, postings []p
 		postings:         postings,
 		uvarintEncodeBuf: make([]byte, binary.MaxVarintLen64),
 		ctx:              ctx,
+		logger:           logger,
 	}
 
 	return prb
@@ -130,7 +132,6 @@ func (r *postingsReaderBuilder) Next() bool {
 
 		break
 	}
-
 	return true
 }
 

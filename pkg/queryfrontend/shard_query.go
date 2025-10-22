@@ -8,6 +8,7 @@ package queryfrontend
 
 import (
 	"context"
+	"log"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -63,6 +64,10 @@ func (s querySharder) Do(ctx context.Context, r queryrange.Request) (queryrange.
 
 	s.queriesTotal.WithLabelValues("true").Inc()
 	reqs := s.shardQuery(r, analysis)
+	log.Printf("shardQuery produced %d sub-requests", len(reqs))
+	for i, req := range reqs {
+		log.Printf(" sub-request %d: %+v", i, req)
+	}
 
 	reqResps, err := queryrange.DoRequests(ctx, s.next, reqs, s.limits)
 	if err != nil {

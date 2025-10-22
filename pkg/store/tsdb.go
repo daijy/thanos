@@ -236,7 +236,7 @@ func (n *noopUpstream) Context() context.Context {
 }
 
 func (s *TSDBStore) SeriesLocal(ctx context.Context, r *storepb.SeriesRequest) ([]*storepb.Series, error) {
-	srv := newFlushableServer(&noopUpstream{ctx: ctx}, sortingStrategyStoreSendNoop)
+	srv := newFlushableServer(&noopUpstream{ctx: ctx}, sortingStrategyStoreSendNoop, nil)
 	if err := s.Series(r, srv); err != nil {
 		return nil, err
 	}
@@ -251,7 +251,7 @@ func (s *TSDBStore) SeriesLocal(ctx context.Context, r *storepb.SeriesRequest) (
 func (s *TSDBStore) Series(r *storepb.SeriesRequest, seriesSrv storepb.Store_SeriesServer) error {
 	var srv flushableServer
 	if fs, ok := seriesSrv.(flushableServer); !ok {
-		srv = newFlushableServer(seriesSrv, sortingStrategyStore)
+		srv = newFlushableServer(seriesSrv, sortingStrategyStore, nil)
 	} else {
 		srv = fs
 	}

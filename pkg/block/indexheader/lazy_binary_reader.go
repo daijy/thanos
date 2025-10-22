@@ -112,14 +112,14 @@ func NewLazyBinaryReader(
 				return nil, errors.Wrap(err, "read index header")
 			}
 
-			level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", indexHeaderFile)
+			level.Info(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", indexHeaderFile)
 
 			start := time.Now()
-			if _, err := WriteBinary(ctx, bkt, id, indexHeaderFile, binaryReaderMetrics.downloadDuration); err != nil {
+			if _, err := WriteBinary(ctx, bkt, id, indexHeaderFile, binaryReaderMetrics.downloadDuration, logger); err != nil {
 				return nil, errors.Wrap(err, "write index header")
 			}
 
-			level.Debug(logger).Log("msg", "built index-header file", "path", indexHeaderFile, "elapsed", time.Since(start))
+			level.Info(logger).Log("msg", "built index-header file", "path", indexHeaderFile, "elapsed", time.Since(start))
 		}
 	}
 
@@ -265,7 +265,9 @@ func (r *LazyBinaryReader) load() (returnErr error) {
 	r.metrics.loadCount.Inc()
 	startTime := time.Now()
 
+	level.Info(r.logger).Log("jidai444_read_head", r.id)
 	reader, err := NewBinaryReader(r.ctx, r.logger, r.bkt, r.dir, r.id, r.postingOffsetsInMemSampling, r.binaryReaderMetrics)
+	level.Info(r.logger).Log("jidai444_finish_head", r.id)
 	if err != nil {
 		r.metrics.loadFailedCount.Inc()
 		r.readerErr = err

@@ -22,6 +22,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	logger "log"
 	"math"
 	"net/http"
 	"sort"
@@ -381,6 +382,7 @@ func (qapi *QueryAPI) parseStep(r *http.Request, defaultRangeQueryStep time.Dura
 	}
 	// Default step is used this way to make it consistent with UI.
 	d := time.Duration(math.Max(float64(rangeSeconds/250), float64(defaultRangeQueryStep/time.Second))) * time.Second
+	logger.Printf("comparing %f and %f ", float64(rangeSeconds/250), float64(defaultRangeQueryStep/time.Second))
 	return d, nil
 }
 

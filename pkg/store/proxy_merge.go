@@ -169,7 +169,6 @@ func (d *responseDeduplicator) At() *storepb.SeriesResponse {
 // It's agnostic to duplicates and overlaps, it forwards all duplicated series in random order.
 func NewProxyResponseLoserTree(seriesSets ...respSet) *losertree.Tree[*storepb.SeriesResponse, respSet] {
 	var maxVal *storepb.SeriesResponse = storepb.NewSeriesResponse(nil)
-
 	less := func(a, b *storepb.SeriesResponse) bool {
 		if a == maxVal && b != maxVal {
 			return false
